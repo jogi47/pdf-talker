@@ -5,8 +5,12 @@ const { OpenAIEmbeddings } = require('@langchain/openai');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { Document } = require('langchain/document');
 const { Chroma } = require('@langchain/community/vectorstores/chroma');
+// Import required ChromaDB JS client
+const { ChromaClient } = require('chromadb');
 const neo4j = require('neo4j-driver');
 const { neo4jDriver } = require('../config/database');
+// Import the shared chromaStore
+const { chromaCollections } = require('./chromaStore');
 
 // Function to read and parse a PDF file
 async function parsePDF(filePath) {
@@ -41,20 +45,35 @@ async function splitTextIntoChunks(text) {
 
 // Function to create vector store from documents
 async function createVectorStore(documents, collectionName) {
-  const embeddings = new OpenAIEmbeddings({
-    openAIApiKey: process.env.OPENAI_API_KEY
-  });
-  
-  const vectorStore = await Chroma.fromDocuments(
-    documents,
-    embeddings,
-    {
-      collectionName: collectionName,
-      url: process.env.CHROMA_URL || 'http://localhost:8000'
-    }
-  );
-  
-  return vectorStore;
+  try {
+    console.log(`Creating vector store for collection: ${collectionName}`);
+    console.log(`Document count: ${documents.length}`);
+    
+    const embeddings = new OpenAIEmbeddings({
+      openAIApiKey: process.env.OPENAI_API_KEY
+    });
+    
+    // Use in-memory ChromaDB instance
+    console.log('Creating in-memory vector store...');
+    const vectorStore = await Chroma.fromDocuments(
+      documents,
+      embeddings,
+      {
+        collectionName: collectionName,
+        // Don't specify path or url to use in-memory storage
+      }
+    );
+    console.log(`Vector store created successfully for ${collectionName}`);
+    
+    // Save to memory cache for retrieval across modules
+    chromaCollections[collectionName] = vectorStore;
+    console.log(`Saved collection to memory cache`);
+    
+    return vectorStore;
+  } catch (error) {
+    console.error('Error creating vector store:', error);
+    throw new Error(`Failed to create vector store: ${error.message}`);
+  }
 }
 
 // Function to create knowledge graph

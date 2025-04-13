@@ -165,7 +165,12 @@ router.post('/:chatId/message', async (req, res) => {
     await chat.save();
     
     // Get answer using LangChain
-    const answer = await answerQuestion(chat.pdfId._id.toString(), message);
+    let answer = await answerQuestion(chat.pdfId._id.toString(), message);
+    
+    // Ensure we have a valid answer
+    if (!answer || answer.trim() === '') {
+      answer = "I'm sorry, I couldn't generate a response. Please try asking a different question.";
+    }
     
     // Add assistant response to chat
     chat.messages.push({
@@ -237,7 +242,12 @@ router.post('/:chatId/audio', audioUpload.single('audio'), async (req, res) => {
     await chat.save();
     
     // Get answer using LangChain
-    const answer = await answerQuestion(chat.pdfId._id.toString(), transcribedText);
+    let answer = await answerQuestion(chat.pdfId._id.toString(), transcribedText);
+    
+    // Ensure we have a valid answer
+    if (!answer || answer.trim() === '') {
+      answer = "I'm sorry, I couldn't generate a response. Please try asking a different question.";
+    }
     
     // Add assistant response to chat
     chat.messages.push({

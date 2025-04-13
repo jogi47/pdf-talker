@@ -6,7 +6,7 @@ A web application that allows users to upload PDF files and chat with them using
 
 - PDF Upload: Upload PDF files of any size
 - PDF Processing: Automatic chunking and embedding of PDF content
-- Vector Storage: ChromaDB for semantic search and retrieval
+- Vector Storage: In-memory ChromaDB for semantic search and retrieval
 - Knowledge Graph: Neo4j for storing relationships between chunks
 - Chat Interface: Ask questions about your PDF content in natural language
 - Voice Input: Record and send voice messages to chat with PDFs using speech
@@ -21,7 +21,7 @@ A web application that allows users to upload PDF files and chat with them using
 - **Frontend**: EJS templates, Bootstrap, JavaScript
 - **Databases**:
   - MongoDB: For storing user data, PDF metadata, and chat history
-  - ChromaDB: Vector database for PDF content embeddings
+  - ChromaDB: In-memory vector database for PDF content embeddings
   - Neo4j: Graph database for knowledge relationships
 - **AI**:
   - LangChain.js: For building AI workflows
@@ -63,10 +63,14 @@ A web application that allows users to upload PDF files and chat with them using
    NEO4J_USER=neo4j
    NEO4J_PASSWORD=your_password
    OPENAI_API_KEY=your_openai_api_key
-   CHROMA_URL=http://localhost:8000
    ```
 
-4. Run the application:
+4. Create a directory for ChromaDB:
+   ```
+   mkdir -p chroma_db
+   ```
+
+5. Run the application:
    ```
    npm start
    ```
@@ -76,7 +80,7 @@ A web application that allows users to upload PDF files and chat with them using
    npm run dev
    ```
 
-5. Open your browser and navigate to `http://localhost:3000`
+6. Open your browser and navigate to `http://localhost:3000`
 
 #### Option 2: Docker Installation
 
@@ -93,7 +97,12 @@ A web application that allows users to upload PDF files and chat with them using
 
 3. Edit the `.env` file and add your OpenAI API key.
 
-4. Start all services using Docker Compose:
+4. Create a directory for ChromaDB:
+   ```
+   mkdir -p chroma_db
+   ```
+
+5. Start all services using Docker Compose:
    ```
    docker-compose up -d
    ```
@@ -101,15 +110,14 @@ A web application that allows users to upload PDF files and chat with them using
    This will start the following containers:
    - MongoDB database
    - Neo4j graph database
-   - ChromaDB vector database
-   - PDF Talker Node.js application
+   - PDF Talker Node.js application (with local ChromaDB)
 
-5. Open your browser and navigate to:
+6. Open your browser and navigate to:
    - `http://localhost:3000` - PDF Talker application
    - `http://localhost:3000/api-docs` - API documentation
    - `http://localhost:7474` - Neo4j Browser (credentials: neo4j/password)
 
-6. To stop all services:
+7. To stop all services:
    ```
    docker-compose down
    ```
@@ -148,7 +156,9 @@ The Docker setup features:
 - **Inter-container Communication**: Services communicate over a dedicated network
 - **Health Checks**: Each service monitors its own health
 - **Dependency Management**: The app waits for all services to be ready before starting
-- **Data Persistence**: All data is stored in Docker volumes for persistence
+- **Data Persistence**: 
+  - MongoDB and Neo4j data is stored in Docker volumes
+  - ChromaDB data is stored in-memory (resets on application restart)
 - **Environment Isolation**: Configuration via environment variables
 
 ## Usage
@@ -184,6 +194,7 @@ pdf-talker/
 ├── uploads/             # Uploaded PDF files
 │   └── audio/           # Temporary audio recordings
 ├── utils/               # Utility functions
+│   └── chromaStore.js   # In-memory ChromaDB storage
 ├── views/               # EJS templates
 │   ├── partials/        # Reusable template parts
 │   ├── pdf/             # PDF-related templates

@@ -1,10 +1,14 @@
 const { ChatOpenAI } = require('@langchain/openai');
 const { Chroma } = require('@langchain/community/vectorstores/chroma');
 const { OpenAIEmbeddings } = require('@langchain/openai');
+// Import required ChromaDB JS client
+const { ChromaClient } = require('chromadb');
 const { StateGraph, END } = require('@langchain/langgraph');
 const { StringOutputParser } = require('@langchain/core/output_parsers');
 const { PromptTemplate } = require('@langchain/core/prompts');
 const { neo4jDriver } = require('../config/database');
+// Import the shared chromaStore
+const { chromaCollections } = require('../utils/chromaStore');
 
 // Initialize OpenAI models
 const chatModel = new ChatOpenAI({
@@ -49,18 +53,36 @@ Previous Answer: {previousAnswer}
 Provide a comprehensive answer that incorporates both the context from the vector database and the knowledge graph structure.
 `);
 
+// Store ChromaDB collections in memory for the session
+// Variable declaration removed as it's now imported from chromaStore
+
 // Function to get context from vector store
 async function getVectorContext(pdfId, question, k = 5) {
   try {
-    const vectorStore = await Chroma.fromExistingCollection(
-      embeddings,
-      {
-        collectionName: pdfId,
-        url: process.env.CHROMA_URL || 'http://localhost:8000'
-      }
-    );
+    console.log(`Retrieving vector context for PDF ${pdfId} with question: ${question}`);
     
+    // Check if we already have this collection in memory
+    if (!chromaCollections[pdfId]) {
+      console.log(`Collection ${pdfId} not found in memory cache`);
+      console.log('Attempting to recreate vector store...');
+      
+      // We can't retrieve from disk, so return empty result
+      return '';
+    }
+    
+    console.log(`Found collection ${pdfId} in memory cache`);
+    const vectorStore = chromaCollections[pdfId];
+    
+    // No need for filter since we're using the correct collection
+    console.log(`Performing similarity search with k=${k}...`);
     const results = await vectorStore.similaritySearch(question, k);
+    
+    if (!results || results.length === 0) {
+      console.log("No results found in vector store");
+      return '';
+    }
+    
+    console.log(`Found ${results.length} results in vector store`);
     return results.map(doc => doc.pageContent).join('\n\n');
   } catch (error) {
     console.error('Error retrieving from vector store:', error);
@@ -69,30 +91,42 @@ async function getVectorContext(pdfId, question, k = 5) {
 }
 
 // Function to get context from knowledge graph
-async function getGraphContext(pdfId, question) {
-  const session = neo4jDriver.session();
-  
+async function getGraphContext(pdfId, question, limit = 5) {
   try {
-    // First, find the most relevant chunks based on the question
-    const result = await session.run(`
-      MATCH (c:Chunk {graphId: $graphId})
-      WITH c, apoc.text.similarity(c.content, $question) AS similarity
-      ORDER BY similarity DESC
-      LIMIT 3
-      MATCH path = (c)-[:NEXT*0..2]-(related)
-      RETURN related.content AS content
-      LIMIT 5
-    `, {
-      graphId: pdfId,
-      question: question
-    });
+    const session = neo4jDriver.session();
     
-    return result.records.map(record => record.get('content')).join('\n\n');
+    // Use a hardcoded LIMIT value directly in the query instead of a parameter
+    const result = await session.run(
+      `MATCH (c:Chunk {graphId: $pdfId})
+       WHERE c.content IS NOT NULL
+       RETURN c.content AS content,
+       null AS title,
+       CASE 
+         WHEN c.content CONTAINS $question THEN 3
+         ELSE 1
+       END AS relevance
+       ORDER BY relevance DESC
+       LIMIT 5`,  // Hardcoded value instead of parameter
+      { pdfId, question }
+    );
+    
+    await session.close();
+    
+    if (result.records.length === 0) {
+      console.log("No knowledge graph results found");
+      return '';
+    }
+    
+    return result.records
+      .map(record => {
+        const title = record.get('title');
+        const content = record.get('content');
+        return `${title ? title + ': ' : ''}${content}`;
+      })
+      .join('\n\n');
   } catch (error) {
     console.error('Error retrieving from knowledge graph:', error);
     return '';
-  } finally {
-    await session.close();
   }
 }
 
@@ -179,16 +213,23 @@ function createPDFQuestionGraph(pdfId) {
 // Function to answer a question about a PDF
 async function answerQuestion(pdfId, question) {
   try {
-    const pdfQuestionGraph = createPDFQuestionGraph(pdfId);
+    if (!question || question.trim() === '') {
+      return 'Your question is empty. Please ask a question about the PDF.';
+    }
     
-    const result = await pdfQuestionGraph.invoke({
-      question
-    });
+    // Create and invoke the graph
+    const pdfQuestionGraph = createPDFQuestionGraph(pdfId);
+    const result = await pdfQuestionGraph.invoke({ question });
+    
+    // Ensure we return a valid string (required by the Chat model)
+    if (!result.answer || typeof result.answer !== 'string' || result.answer.trim() === '') {
+      return "I couldn't find any relevant information in the PDF for your question. Please try rephrasing your question or ask about a different topic.";
+    }
     
     return result.answer;
   } catch (error) {
     console.error('Error answering question:', error);
-    return 'I encountered an error while trying to answer your question. Please try again.';
+    return 'I encountered an error while trying to answer your question. Please try again later.';
   }
 }
 

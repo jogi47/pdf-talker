@@ -16,14 +16,6 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Wait for ChromaDB to be ready
-echo "Waiting for ChromaDB to be ready..."
-./wait-for-it.sh chromadb:8000 -t 60
-if [ $? -ne 0 ]; then
-  echo "Could not connect to ChromaDB. Exiting."
-  exit 1
-fi
-
 # All services are ready, start the application
 echo "All services are ready. Starting PDF Talker application..."
 exec npm start 

@@ -40,3 +40,6 @@ build/
 .next/
 out/
 .nuxt/
+
+# ChromaDB
+chroma_db/
