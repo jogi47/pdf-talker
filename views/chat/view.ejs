@@ -1,0 +1,499 @@
+<%- include('../partials/header') %>
+
+<div class="row mb-4">
+  <div class="col-md-8">
+    <h1><%= chat.title %></h1>
+    <p class="lead">Chatting with <%= pdf.title %></p>
+  </div>
+  <div class="col-md-4 text-md-end">
+    <a href="/chat/pdf/<%= pdf._id %>" class="btn btn-outline-secondary">Back to Chats</a>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Chat</span>
+        <button id="deleteChat" class="btn btn-sm btn-danger">Delete Chat</button>
+      </div>
+      <div class="card-body">
+        <div id="chatMessages" class="chat-messages mb-3" style="height: 500px; overflow-y: auto;">
+          <% if (chat.messages && chat.messages.length > 0) { %>
+            <% chat.messages.forEach(message => { %>
+              <div class="chat-message <%= message.role === 'assistant' ? 'chat-message-ai' : 'chat-message-user' %>">
+                <div class="chat-message-content">
+                  <div class="chat-message-header">
+                    <strong><%= message.role === 'assistant' ? 'AI' : 'You' %></strong>
+                    <small class="text-muted"><%= new Date(message.timestamp).toLocaleTimeString() %></small>
+                  </div>
+                  <div class="chat-message-text">
+                    <%= message.content %>
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          <% } else { %>
+            <div class="text-center text-muted p-5">
+              <p>No messages yet. Start the conversation by asking a question.</p>
+            </div>
+          <% } %>
+        </div>
+        
+        <form id="messageForm" class="chat-input">
+          <div class="input-group">
+            <input type="text" id="messageInput" class="form-control" placeholder="Ask a question about the PDF..." <%= !pdf.processed ? 'disabled' : '' %>>
+            <button type="submit" class="btn btn-primary" <%= !pdf.processed ? 'disabled' : '' %>>Send</button>
+            <button type="button" id="recordButton" class="btn btn-danger" <%= !pdf.processed ? 'disabled' : '' %>>
+              <i class="bi bi-mic-fill"></i> <span>Record</span>
+            </button>
+          </div>
+          <div id="recordingStatus" class="mt-2 d-none">
+            <div class="d-flex align-items-center">
+              <div class="recording-indicator me-2"></div>
+              <span>Recording... <span id="recordingTimer">0:00</span></span>
+              <button type="button" id="stopRecordingButton" class="btn btn-sm btn-outline-danger ms-2">Stop</button>
+            </div>
+          </div>
+          <% if (!pdf.processed) { %>
+            <div class="form-text text-warning">PDF is still being processed. Please wait before asking questions.</div>
+          <% } %>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const chatId = '<%= chat._id %>';
+  const messageForm = document.getElementById('messageForm');
+  const messageInput = document.getElementById('messageInput');
+  const chatMessages = document.getElementById('chatMessages');
+  const deleteChat = document.getElementById('deleteChat');
+  const recordButton = document.getElementById('recordButton');
+  const stopRecordingButton = document.getElementById('stopRecordingButton');
+  const recordingStatus = document.getElementById('recordingStatus');
+  const recordingTimer = document.getElementById('recordingTimer');
+  
+  let mediaRecorder;
+  let audioChunks = [];
+  let recordingInterval;
+  let recordingSeconds = 0;
+  
+  // Scroll to bottom of chat messages
+  function scrollToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+  
+  // Initialize by scrolling to bottom
+  scrollToBottom();
+  
+  // Format recording time
+  function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+  
+  // Update recording timer
+  function updateRecordingTimer() {
+    recordingSeconds++;
+    recordingTimer.textContent = formatTime(recordingSeconds);
+  }
+  
+  // Handle recording audio
+  recordButton.addEventListener('click', async function() {
+    try {
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Show recording UI
+      recordingStatus.classList.remove('d-none');
+      recordButton.disabled = true;
+      messageInput.disabled = true;
+      
+      // Reset recording variables
+      audioChunks = [];
+      recordingSeconds = 0;
+      recordingTimer.textContent = formatTime(recordingSeconds);
+      
+      // Start recording timer
+      recordingInterval = setInterval(updateRecordingTimer, 1000);
+      
+      // Set up media recorder
+      mediaRecorder = new MediaRecorder(stream);
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        // Stop the recording timer
+        clearInterval(recordingInterval);
+        
+        // Combine audio chunks into a blob
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        
+        // Add loading indicator
+        const loadingElement = document.createElement('div');
+        loadingElement.className = 'chat-message chat-message-ai';
+        loadingElement.innerHTML = `
+          <div class="chat-message-content">
+            <div class="chat-message-header">
+              <strong>AI</strong>
+              <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+            </div>
+            <div class="chat-message-text">
+              <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              Transcribing and processing your message...
+            </div>
+          </div>
+        `;
+        chatMessages.appendChild(loadingElement);
+        scrollToBottom();
+        
+        // Create form data to send audio
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        
+        try {
+          // Send audio to server
+          const response = await fetch(`/chat/${chatId}/audio`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          const data = await response.json();
+          
+          // Remove loading indicator
+          chatMessages.removeChild(loadingElement);
+          
+          if (data.success) {
+            // Add user message to chat UI
+            const userMessageElement = document.createElement('div');
+            userMessageElement.className = 'chat-message chat-message-user';
+            userMessageElement.innerHTML = `
+              <div class="chat-message-content">
+                <div class="chat-message-header">
+                  <strong>You (Voice)</strong>
+                  <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+                </div>
+                <div class="chat-message-text">
+                  ${data.transcribedText}
+                </div>
+              </div>
+            `;
+            chatMessages.appendChild(userMessageElement);
+            
+            // Add AI response to chat UI
+            const aiMessageElement = document.createElement('div');
+            aiMessageElement.className = 'chat-message chat-message-ai';
+            aiMessageElement.innerHTML = `
+              <div class="chat-message-content">
+                <div class="chat-message-header">
+                  <strong>AI</strong>
+                  <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+                </div>
+                <div class="chat-message-text">
+                  ${data.message}
+                </div>
+              </div>
+            `;
+            chatMessages.appendChild(aiMessageElement);
+          } else {
+            // Show error
+            const errorElement = document.createElement('div');
+            errorElement.className = 'chat-message chat-message-ai';
+            errorElement.innerHTML = `
+              <div class="chat-message-content">
+                <div class="chat-message-header">
+                  <strong>Error</strong>
+                  <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+                </div>
+                <div class="chat-message-text text-danger">
+                  ${data.error || 'Could not process your voice message.'}
+                </div>
+              </div>
+            `;
+            chatMessages.appendChild(errorElement);
+          }
+          
+          scrollToBottom();
+        } catch (error) {
+          // Show error
+          chatMessages.removeChild(loadingElement);
+          const errorElement = document.createElement('div');
+          errorElement.className = 'chat-message chat-message-ai';
+          errorElement.innerHTML = `
+            <div class="chat-message-content">
+              <div class="chat-message-header">
+                <strong>Error</strong>
+                <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+              </div>
+              <div class="chat-message-text text-danger">
+                Failed to send audio message. Please try again.
+              </div>
+            </div>
+          `;
+          chatMessages.appendChild(errorElement);
+          scrollToBottom();
+        }
+      };
+      
+      // Start recording
+      mediaRecorder.start();
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      alert('Could not access microphone. Please check permissions and try again.');
+    }
+  });
+  
+  // Handle stopping the recording
+  stopRecordingButton.addEventListener('click', function() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      
+      // Get all tracks from the stream and stop them
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      
+      // Reset UI
+      recordingStatus.classList.add('d-none');
+      recordButton.disabled = false;
+      messageInput.disabled = false;
+    }
+  });
+  
+  // Handle sending messages
+  messageForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const message = messageInput.value.trim();
+    if (!message) return;
+    
+    // Disable input and button while processing
+    messageInput.disabled = true;
+    messageInput.value = '';
+    
+    // Add user message to chat UI
+    const userMessageElement = document.createElement('div');
+    userMessageElement.className = 'chat-message chat-message-user';
+    userMessageElement.innerHTML = `
+      <div class="chat-message-content">
+        <div class="chat-message-header">
+          <strong>You</strong>
+          <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+        </div>
+        <div class="chat-message-text">
+          ${message}
+        </div>
+      </div>
+    `;
+    chatMessages.appendChild(userMessageElement);
+    scrollToBottom();
+    
+    // Add loading indicator
+    const loadingElement = document.createElement('div');
+    loadingElement.className = 'chat-message chat-message-ai';
+    loadingElement.innerHTML = `
+      <div class="chat-message-content">
+        <div class="chat-message-header">
+          <strong>AI</strong>
+          <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+        </div>
+        <div class="chat-message-text">
+          <div class="spinner-border spinner-border-sm" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          Thinking...
+        </div>
+      </div>
+    `;
+    chatMessages.appendChild(loadingElement);
+    scrollToBottom();
+    
+    try {
+      // Send message to server
+      const response = await fetch(`/chat/${chatId}/message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message })
+      });
+      
+      const data = await response.json();
+      
+      // Remove loading indicator
+      chatMessages.removeChild(loadingElement);
+      
+      if (data.success) {
+        // Add AI response to chat UI
+        const aiMessageElement = document.createElement('div');
+        aiMessageElement.className = 'chat-message chat-message-ai';
+        aiMessageElement.innerHTML = `
+          <div class="chat-message-content">
+            <div class="chat-message-header">
+              <strong>AI</strong>
+              <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+            </div>
+            <div class="chat-message-text">
+              ${data.message}
+            </div>
+          </div>
+        `;
+        chatMessages.appendChild(aiMessageElement);
+      } else {
+        // Show error
+        const errorElement = document.createElement('div');
+        errorElement.className = 'chat-message chat-message-ai';
+        errorElement.innerHTML = `
+          <div class="chat-message-content">
+            <div class="chat-message-header">
+              <strong>Error</strong>
+              <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+            </div>
+            <div class="chat-message-text text-danger">
+              ${data.error || 'Something went wrong. Please try again.'}
+            </div>
+          </div>
+        `;
+        chatMessages.appendChild(errorElement);
+      }
+    } catch (error) {
+      // Show error
+      chatMessages.removeChild(loadingElement);
+      const errorElement = document.createElement('div');
+      errorElement.className = 'chat-message chat-message-ai';
+      errorElement.innerHTML = `
+        <div class="chat-message-content">
+          <div class="chat-message-header">
+            <strong>Error</strong>
+            <small class="text-muted">${new Date().toLocaleTimeString()}</small>
+          </div>
+          <div class="chat-message-text text-danger">
+            Failed to send message. Please try again.
+          </div>
+        </div>
+      `;
+      chatMessages.appendChild(errorElement);
+    }
+    
+    // Re-enable input
+    messageInput.disabled = false;
+    messageInput.focus();
+    scrollToBottom();
+  });
+  
+  // Handle delete chat
+  deleteChat.addEventListener('click', async function() {
+    if (!confirm('Are you sure you want to delete this chat?')) return;
+    
+    try {
+      const response = await fetch(`/chat/${chatId}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        window.location.href = '/chat/pdf/<%= pdf._id %>';
+      } else {
+        alert('Failed to delete chat: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      alert('Failed to delete chat');
+    }
+  });
+});
+</script>
+
+<style>
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 0.25rem;
+}
+
+.chat-message {
+  display: flex;
+  margin-bottom: 1rem;
+}
+
+.chat-message-user {
+  justify-content: flex-end;
+}
+
+.chat-message-ai {
+  justify-content: flex-start;
+}
+
+.chat-message-content {
+  max-width: 80%;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.chat-message-user .chat-message-content {
+  background-color: #007bff;
+  color: white;
+}
+
+.chat-message-ai .chat-message-content {
+  background-color: white;
+  border: 1px solid #dee2e6;
+}
+
+.chat-message-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.chat-message-user .chat-message-header {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-message-text {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.chat-input {
+  margin-top: 1rem;
+}
+
+.recording-indicator {
+  width: 12px;
+  height: 12px;
+  background-color: #dc3545;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+</style>
+
+<%- include('../partials/footer') %> 

@@ -1,0 +1,43 @@
+<%- include('../partials/header') %>
+
+<div class="row mb-4">
+  <div class="col-12">
+    <h1>Upload PDF</h1>
+    <p class="lead">Upload a PDF file to chat with it later</p>
+  </div>
+</div>
+
+<% if (locals.error) { %>
+  <div class="alert alert-danger">
+    <%= error %>
+  </div>
+<% } %>
+
+<div class="row">
+  <div class="col-md-8 mx-auto">
+    <div class="card">
+      <div class="card-body">
+        <form action="/pdf/upload" method="POST" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label for="title" class="form-label">PDF Title</label>
+            <input type="text" class="form-control" id="title" name="title" placeholder="Enter a title for your PDF">
+            <div class="form-text">If left blank, the filename will be used.</div>
+          </div>
+          
+          <div class="mb-3">
+            <label for="pdfFile" class="form-label">PDF File</label>
+            <input type="file" class="form-control" id="pdfFile" name="pdfFile" accept="application/pdf" required>
+            <div class="form-text">Only PDF files are accepted. Maximum file size depends on your server configuration.</div>
+          </div>
+          
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary">Upload PDF</button>
+            <a href="/" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %> 

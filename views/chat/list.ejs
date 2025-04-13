@@ -1,0 +1,44 @@
+<%- include('../partials/header') %>
+
+<div class="row mb-4">
+  <div class="col-md-8">
+    <h1>Chats for <%= pdf.title %></h1>
+    <p class="lead">View chat history or start a new conversation with this PDF</p>
+  </div>
+  <div class="col-md-4 text-md-end">
+    <form action="/chat/pdf/<%= pdf._id %>/new" method="POST" class="d-inline">
+      <button type="submit" class="btn btn-primary">New Chat</button>
+    </form>
+    <a href="/pdf/<%= pdf._id %>" class="btn btn-outline-secondary ms-2">Back to PDF</a>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12">
+    <% if (chats && chats.length > 0) { %>
+      <div class="list-group">
+        <% chats.forEach(chat => { %>
+          <a href="/chat/<%= chat._id %>" class="list-group-item list-group-item-action">
+            <div class="d-flex w-100 justify-content-between">
+              <h5 class="mb-1"><%= chat.title %></h5>
+              <small><%= new Date(chat.updatedAt).toLocaleString() %></small>
+            </div>
+            <p class="mb-1">
+              <% if (chat.messages.length > 0) { %>
+                <%= chat.messages.length %> messages
+              <% } else { %>
+                No messages yet
+              <% } %>
+            </p>
+          </a>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="alert alert-info">
+        No chats yet. Start a new chat to begin asking questions about this PDF.
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<%- include('../partials/footer') %> 

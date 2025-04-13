@@ -1,0 +1,51 @@
+<%- include('partials/header') %>
+
+<div class="row mb-4">
+  <div class="col-12">
+    <h1>Welcome to PDF Talker</h1>
+    <p class="lead">Upload your PDFs and chat with them using AI</p>
+    <a href="/pdf/upload" class="btn btn-primary mb-4">Upload New PDF</a>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12">
+    <h2>Your PDFs</h2>
+    
+    <% if (pdfs && pdfs.length > 0) { %>
+      <div class="row row-cols-1 row-cols-md-3 g-4">
+        <% pdfs.forEach(pdf => { %>
+          <div class="col">
+            <div class="card h-100">
+              <div class="card-body">
+                <h5 class="card-title"><%= pdf.title %></h5>
+                <p class="card-text">
+                  <small class="text-muted">Uploaded: <%= new Date(pdf.uploadDate).toLocaleString() %></small><br>
+                  <small class="text-muted">Size: <%= (pdf.fileSize / 1024 / 1024).toFixed(2) %> MB</small><br>
+                  <small class="text-muted">Pages: <%= pdf.totalPages %></small>
+                </p>
+                <div class="d-flex justify-content-between">
+                  <a href="/pdf/<%= pdf._id %>" class="btn btn-primary">View</a>
+                  <a href="/chat/pdf/<%= pdf._id %>" class="btn btn-success">Chat</a>
+                </div>
+              </div>
+              <div class="card-footer">
+                <% if (pdf.processed) { %>
+                  <span class="badge bg-success">Ready</span>
+                <% } else { %>
+                  <span class="badge bg-warning text-dark">Processing</span>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <div class="alert alert-info">
+        No PDFs uploaded yet. <a href="/pdf/upload" class="alert-link">Upload your first PDF</a> to get started.
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<%- include('partials/footer') %> 

@@ -1,0 +1,56 @@
+<%- include('../partials/header') %>
+
+<div class="row mb-4">
+  <div class="col-md-8">
+    <h1><%= pdf.title %></h1>
+    <p class="lead">Uploaded on <%= new Date(pdf.uploadDate).toLocaleString() %></p>
+  </div>
+  <div class="col-md-4 text-md-end">
+    <a href="/chat/pdf/<%= pdf._id %>" class="btn btn-success me-2">Chat with PDF</a>
+    <a href="/<%= pdf._id %>/delete" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this PDF?')">Delete</a>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-4">
+    <div class="card mb-4">
+      <div class="card-header">
+        PDF Information
+      </div>
+      <ul class="list-group list-group-flush">
+        <li class="list-group-item">
+          <strong>File Size:</strong> <%= (pdf.fileSize / 1024 / 1024).toFixed(2) %> MB
+        </li>
+        <li class="list-group-item">
+          <strong>Total Pages:</strong> <%= pdf.totalPages %>
+        </li>
+        <li class="list-group-item">
+          <strong>Chunk Count:</strong> <%= pdf.chunkCount %>
+        </li>
+        <li class="list-group-item">
+          <strong>Status:</strong>
+          <% if (pdf.processed) { %>
+            <span class="badge bg-success">Ready for chat</span>
+          <% } else { %>
+            <span class="badge bg-warning text-dark">Processing</span>
+          <% } %>
+        </li>
+      </ul>
+    </div>
+  </div>
+  
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header">
+        PDF Preview
+      </div>
+      <div class="card-body">
+        <div class="ratio ratio-16x9">
+          <iframe src="/uploads/<%= pdf.fileName %>" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %> 
