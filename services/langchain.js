@@ -164,6 +164,7 @@ function createPDFQuestionGraph(pdfId) {
   });
   
   // Define the edges
+  pdfQuestionGraph.setEntryPoint("retrieveVectorContext");
   pdfQuestionGraph.addEdge('retrieveVectorContext', 'generateInitialAnswer');
   pdfQuestionGraph.addEdge('generateInitialAnswer', 'retrieveGraphContext');
   pdfQuestionGraph.addEdge('retrieveGraphContext', 'generateFinalAnswer');
