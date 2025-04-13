@@ -13,6 +13,7 @@ A web application that allows users to upload PDF files and chat with them using
 - Chat History: View and manage your conversation history
 - Agentic AI: LangGraph workflow for intelligent responses
 - API Documentation: Interactive Swagger UI to explore and test the API
+- Containerization: Docker setup for easy deployment
 
 ## Tech Stack
 
@@ -28,18 +29,20 @@ A web application that allows users to upload PDF files and chat with them using
   - OpenAI: For embeddings, text generation, and speech-to-text conversion
 - **Documentation**:
   - Swagger UI: Interactive API documentation
+- **Deployment**:
+  - Docker & Docker Compose: For containerization and orchestration
 
 ## Setup
 
 ### Prerequisites
 
-- Node.js and npm
-- MongoDB (running locally or remote)
-- Neo4j (running locally or remote)
-- ChromaDB (running locally or remote)
+- Node.js and npm (for local development)
+- Docker and Docker Compose (for containerized setup)
 - OpenAI API key
 
 ### Installation
+
+#### Option 1: Standard Installation
 
 1. Clone the repository:
    ```
@@ -74,6 +77,79 @@ A web application that allows users to upload PDF files and chat with them using
    ```
 
 5. Open your browser and navigate to `http://localhost:3000`
+
+#### Option 2: Docker Installation
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/pdf-talker.git
+   cd pdf-talker
+   ```
+
+2. Create a `.env` file based on the `.env.docker` template:
+   ```
+   cp .env.docker .env
+   ```
+
+3. Edit the `.env` file and add your OpenAI API key.
+
+4. Start all services using Docker Compose:
+   ```
+   docker-compose up -d
+   ```
+
+   This will start the following containers:
+   - MongoDB database
+   - Neo4j graph database
+   - ChromaDB vector database
+   - PDF Talker Node.js application
+
+5. Open your browser and navigate to:
+   - `http://localhost:3000` - PDF Talker application
+   - `http://localhost:3000/api-docs` - API documentation
+   - `http://localhost:7474` - Neo4j Browser (credentials: neo4j/password)
+
+6. To stop all services:
+   ```
+   docker-compose down
+   ```
+
+   To stop and remove all data volumes:
+   ```
+   docker-compose down -v
+   ```
+
+#### Docker Helper Script
+
+For convenience, a helper script is provided to manage Docker operations:
+
+1. Make the script executable (if not already):
+   ```
+   chmod +x docker.sh
+   ```
+
+2. Use the script to manage containers:
+   ```
+   ./docker.sh start    # Start all containers
+   ./docker.sh stop     # Stop all containers
+   ./docker.sh restart  # Restart all containers
+   ./docker.sh status   # Show container status
+   ./docker.sh logs     # View container logs
+   ./docker.sh clean    # Stop and remove volumes
+   ./docker.sh help     # Show help message
+   ```
+
+The script will automatically create a `.env` file from the template if one doesn't exist.
+
+### Docker Architecture
+
+The Docker setup features:
+- **Service Orchestration**: Docker Compose manages all services
+- **Inter-container Communication**: Services communicate over a dedicated network
+- **Health Checks**: Each service monitors its own health
+- **Dependency Management**: The app waits for all services to be ready before starting
+- **Data Persistence**: All data is stored in Docker volumes for persistence
+- **Environment Isolation**: Configuration via environment variables
 
 ## Usage
 
@@ -112,11 +188,19 @@ pdf-talker/
 │   ├── partials/        # Reusable template parts
 │   ├── pdf/             # PDF-related templates
 │   └── chat/            # Chat-related templates
+├── .dockerignore        # Files to exclude from Docker build
 ├── .env                 # Environment variables
+├── .env.docker          # Template for Docker environment variables
+├── .gitignore           # Git ignore file
 ├── app.js               # Main application file
+├── docker-compose.yml   # Docker Compose configuration
+├── docker-start.sh      # Docker startup script
+├── docker.sh            # Docker helper script
+├── Dockerfile           # Docker image definition
 ├── package.json         # Project dependencies
 ├── swagger.js           # Swagger configuration
 ├── swagger-routes.js    # Swagger route annotations
+├── wait-for-it.sh       # Service availability checker
 └── README.md            # Project documentation
 ```
 
