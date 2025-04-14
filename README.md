@@ -6,7 +6,7 @@ A web application that allows users to upload PDF files and chat with them using
 
 - PDF Upload: Upload PDF files of any size
 - PDF Processing: Automatic chunking and embedding of PDF content
-- Vector Storage: In-memory ChromaDB for semantic search and retrieval
+- Vector Storage: ChromaDB for semantic search and retrieval
 - Knowledge Graph: Neo4j for storing relationships between chunks
 - Chat Interface: Ask questions about your PDF content in natural language
 - Voice Input: Record and send voice messages to chat with PDFs using speech
@@ -21,7 +21,7 @@ A web application that allows users to upload PDF files and chat with them using
 - **Frontend**: EJS templates, Bootstrap, JavaScript
 - **Databases**:
   - MongoDB: For storing user data, PDF metadata, and chat history
-  - ChromaDB: In-memory vector database for PDF content embeddings
+  - ChromaDB: Vector database for PDF content embeddings
   - Neo4j: Graph database for knowledge relationships
 - **AI**:
   - LangChain.js: For building AI workflows
@@ -65,9 +65,9 @@ A web application that allows users to upload PDF files and chat with them using
    OPENAI_API_KEY=your_openai_api_key
    ```
 
-4. Create a directory for ChromaDB:
+4. Start the ChromaDB server:
    ```
-   mkdir -p chroma_db
+   docker run -p 8000:8000 chromadb/chroma:latest
    ```
 
 5. Run the application:
@@ -97,12 +97,7 @@ A web application that allows users to upload PDF files and chat with them using
 
 3. Edit the `.env` file and add your OpenAI API key.
 
-4. Create a directory for ChromaDB:
-   ```
-   mkdir -p chroma_db
-   ```
-
-5. Start all services using Docker Compose:
+4. Start all services using Docker Compose:
    ```
    docker-compose up -d
    ```
@@ -110,14 +105,16 @@ A web application that allows users to upload PDF files and chat with them using
    This will start the following containers:
    - MongoDB database
    - Neo4j graph database
-   - PDF Talker Node.js application (with local ChromaDB)
+   - ChromaDB server
+   - PDF Talker Node.js application
 
-6. Open your browser and navigate to:
+5. Open your browser and navigate to:
    - `http://localhost:3000` - PDF Talker application
    - `http://localhost:3000/api-docs` - API documentation
    - `http://localhost:7474` - Neo4j Browser (credentials: neo4j/password)
+   - `http://localhost:8000` - ChromaDB server API
 
-7. To stop all services:
+6. To stop all services:
    ```
    docker-compose down
    ```
@@ -158,7 +155,7 @@ The Docker setup features:
 - **Dependency Management**: The app waits for all services to be ready before starting
 - **Data Persistence**: 
   - MongoDB and Neo4j data is stored in Docker volumes
-  - ChromaDB data is stored in-memory (resets on application restart)
+  - ChromaDB data is stored in persistent volume for vector embeddings
 - **Environment Isolation**: Configuration via environment variables
 
 ## Usage
@@ -170,6 +167,40 @@ The Docker setup features:
    - Type your question and click "Send"
    - Or click "Record" to use voice input, then stop when finished
 5. View and manage your chat history
+
+### Audio Input Support
+
+PDF Talker supports the following audio formats for voice input:
+- MP3 (.mp3)
+- WAV (.wav)
+- OGG/Vorbis (.ogg)
+- WebM (.webm)
+- FLAC (.flac)
+- M4A (.m4a)
+- MP4 audio (.mp4)
+- MPEG audio (.mpeg, .mpga)
+- OGG audio (.oga)
+
+The maximum file size for audio uploads is 20MB.
+
+## Utility Scripts
+
+The application includes several utility scripts to help with maintenance and debugging:
+
+1. Test ChromaDB connection:
+   ```
+   node utils/test-chroma-connection.js
+   ```
+
+2. Rebuild ChromaDB collections from existing PDFs:
+   ```
+   node utils/rebuild-chroma-collections.js
+   ```
+
+3. Test the complete chat pipeline with a specific PDF:
+   ```
+   node utils/test-chat-pipeline.js <pdfId> "Your test question"
+   ```
 
 ## API Documentation
 
@@ -194,7 +225,10 @@ pdf-talker/
 ├── uploads/             # Uploaded PDF files
 │   └── audio/           # Temporary audio recordings
 ├── utils/               # Utility functions
-│   └── chromaStore.js   # In-memory ChromaDB storage
+│   ├── chromaStore.js              # ChromaDB client configuration
+│   ├── test-chroma-connection.js   # Test ChromaDB connectivity
+│   ├── test-chat-pipeline.js       # Test complete chat workflow
+│   └── rebuild-chroma-collections.js # Recreate ChromaDB collections
 ├── views/               # EJS templates
 │   ├── partials/        # Reusable template parts
 │   ├── pdf/             # PDF-related templates
@@ -214,6 +248,18 @@ pdf-talker/
 ├── wait-for-it.sh       # Service availability checker
 └── README.md            # Project documentation
 ```
+
+## Troubleshooting
+
+### ChromaDB Issues
+- The application requires a running ChromaDB server at http://localhost:8000
+- If you encounter vector search errors, try rebuilding the collections with `node utils/rebuild-chroma-collections.js`
+- To test ChromaDB connectivity, run `node utils/test-chroma-connection.js`
+
+### Audio Processing Issues
+- Ensure your audio file is in one of the supported formats
+- Check that the file size is under 20MB
+- If transcription fails, try a different audio format or check server logs for detailed error messages
 
 ## License
 
