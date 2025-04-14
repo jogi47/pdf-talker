@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger');
+// Add ChromaDB client
+const { chromaClient } = require('./utils/chromaStore');
 
 // Load environment variables
 dotenv.config();
@@ -81,11 +83,27 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
-});
+// Check ChromaDB connection before starting the server
+async function startServer() {
+  try {
+    // Test connection to ChromaDB
+    const heartbeat = await chromaClient.heartbeat();
+    console.log(`ChromaDB connection successful! Heartbeat: ${heartbeat}`);
+    
+    // Start server only after confirming ChromaDB is available
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+      console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
+    });
+  } catch (error) {
+    console.error('Failed to connect to ChromaDB:', error.message);
+    console.error('Please ensure the ChromaDB server is running at http://localhost:8000');
+    process.exit(1);
+  }
+}
+
+// Start the server with ChromaDB check
+startServer();
 
 module.exports = app; 

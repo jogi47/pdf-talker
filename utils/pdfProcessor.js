@@ -10,7 +10,7 @@ const { ChromaClient } = require('chromadb');
 const neo4j = require('neo4j-driver');
 const { neo4jDriver } = require('../config/database');
 // Import the shared chromaStore
-const { chromaCollections } = require('./chromaStore');
+const { chromaClient, chromaCollections } = require('./chromaStore');
 
 // Function to read and parse a PDF file
 async function parsePDF(filePath) {
@@ -53,14 +53,17 @@ async function createVectorStore(documents, collectionName) {
       openAIApiKey: process.env.OPENAI_API_KEY
     });
     
-    // Use in-memory ChromaDB instance
-    console.log('Creating in-memory vector store...');
+    // Use ChromaDB server running at http://localhost:8000
+    console.log('Creating vector store using ChromaDB server...');
     const vectorStore = await Chroma.fromDocuments(
       documents,
       embeddings,
       {
         collectionName: collectionName,
-        // Don't specify path or url to use in-memory storage
+        url: 'http://localhost:8000',  // Connect to the running ChromaDB server
+        collectionMetadata: {
+          'hnsw:space': 'cosine'
+        }
       }
     );
     console.log(`Vector store created successfully for ${collectionName}`);

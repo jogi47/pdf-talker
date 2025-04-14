@@ -11,30 +11,39 @@ const { convertSpeechToText } = require('../utils/speechToText');
 // Set up multer for audio uploads
 const audioStorage = multer.diskStorage({
   destination: function(req, file, cb) {
-    cb(null, 'uploads/audio/');
+    // Ensure the directory exists
+    const dir = 'uploads/audio';
+    if (!fs.existsSync(dir)){
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
   },
   filename: function(req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    // Ensure proper file extension is preserved
+    const ext = path.extname(file.originalname).toLowerCase() || '.mp3';
+    cb(null, uniqueSuffix + ext);
   }
 });
 
 const audioUpload = multer({
   storage: audioStorage,
   fileFilter: function(req, file, cb) {
-    // Accept common audio formats
-    const fileTypes = /webm|mp3|wav|ogg/;
+    // Accept only formats supported by OpenAI's Whisper
+    const fileTypes = /flac|m4a|mp3|mp4|mpeg|mpga|oga|ogg|wav|webm/;
     const extname = fileTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = fileTypes.test(file.mimetype);
     
-    if (mimetype && extname) {
+    console.log(`Uploaded file: ${file.originalname}, MIME type: ${file.mimetype}`);
+    
+    if (mimetype || extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Error: Audio files only!'));
+      cb(new Error(`Unsupported file format. Supported formats: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm`));
     }
   },
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB max file size
+    fileSize: 20 * 1024 * 1024 // 20MB max file size (Whisper supports up to 25MB)
   }
 });
 
@@ -205,10 +214,17 @@ router.post('/:chatId/audio', audioUpload.single('audio'), async (req, res) => {
       });
     }
     
+    console.log(`Audio file received: ${req.file.path} (${req.file.mimetype})`);
+    
     // Find the chat
     const chat = await Chat.findById(chatId).populate('pdfId');
     
     if (!chat) {
+      // Clean up the audio file
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      
       return res.status(404).json({
         success: false,
         error: 'Chat not found'
@@ -217,6 +233,11 @@ router.post('/:chatId/audio', audioUpload.single('audio'), async (req, res) => {
     
     // Check if PDF is processed
     if (!chat.pdfId.processed) {
+      // Clean up the audio file
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      
       return res.status(400).json({
         success: false,
         error: 'PDF is still being processed, please wait'
@@ -224,14 +245,36 @@ router.post('/:chatId/audio', audioUpload.single('audio'), async (req, res) => {
     }
     
     // Convert speech to text
-    const transcribedText = await convertSpeechToText(req.file.path);
-    
-    if (!transcribedText || transcribedText.trim() === '') {
+    let transcribedText;
+    try {
+      transcribedText = await convertSpeechToText(req.file.path);
+    } catch (transcriptionError) {
+      console.error('Transcription error:', transcriptionError);
+      
+      // Clean up the audio file
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      
       return res.status(400).json({
         success: false,
-        error: 'Could not transcribe audio'
+        error: `Audio transcription failed: ${transcriptionError.message}`
       });
     }
+    
+    if (!transcribedText || transcribedText.trim() === '') {
+      // Clean up the audio file
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      
+      return res.status(400).json({
+        success: false,
+        error: 'Could not transcribe audio (empty result)'
+      });
+    }
+    
+    console.log(`Audio transcribed successfully: "${transcribedText.substring(0, 100)}..."`);
     
     // Add user message to chat
     chat.messages.push({
@@ -275,7 +318,7 @@ router.post('/:chatId/audio', audioUpload.single('audio'), async (req, res) => {
     }
     res.status(500).json({
       success: false,
-      error: 'Failed to process audio'
+      error: `Failed to process audio: ${error.message}`
     });
   }
 });

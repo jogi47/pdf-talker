@@ -8,7 +8,7 @@ const { StringOutputParser } = require('@langchain/core/output_parsers');
 const { PromptTemplate } = require('@langchain/core/prompts');
 const { neo4jDriver } = require('../config/database');
 // Import the shared chromaStore
-const { chromaCollections } = require('../utils/chromaStore');
+const { chromaClient, chromaCollections } = require('../utils/chromaStore');
 
 // Initialize OpenAI models
 const chatModel = new ChatOpenAI({
@@ -57,33 +57,76 @@ Provide a comprehensive answer that incorporates both the context from the vecto
 // Variable declaration removed as it's now imported from chromaStore
 
 // Function to get context from vector store
-async function getVectorContext(pdfId, question, k = 5) {
+async function getVectorContext(pdfId, question, k = 1) {
   try {
     console.log(`Retrieving vector context for PDF ${pdfId} with question: ${question}`);
     
-    // Check if we already have this collection in memory
-    if (!chromaCollections[pdfId]) {
-      console.log(`Collection ${pdfId} not found in memory cache`);
-      console.log('Attempting to recreate vector store...');
+    // Create embedding for query
+    console.log(`Creating embedding for question...`);
+    const embedding = await embeddings.embedQuery(question);
+    
+    // First try: Direct ChromaDB API approach (most reliable)
+    try {
+      console.log(`Trying direct ChromaDB API approach...`);
+      const collection = await chromaClient.getCollection({
+        name: pdfId
+      });
+      console.log(`Retrieved collection ${pdfId} directly from ChromaDB server`);
       
-      // We can't retrieve from disk, so return empty result
-      return '';
+      // Query directly using ChromaDB API
+      const queryResponse = await collection.query({
+        queryEmbeddings: [embedding],
+        nResults: k
+      });
+      
+      if (queryResponse.documents[0] && queryResponse.documents[0].length > 0) {
+        console.log(`Found ${queryResponse.documents[0].length} results using direct ChromaDB query`);
+        return queryResponse.documents[0].join('\n\n');
+      } else {
+        console.log("No results found in direct ChromaDB query");
+      }
+    } catch (directError) {
+      console.error(`Error with direct ChromaDB query: ${directError.message}`);
     }
     
-    console.log(`Found collection ${pdfId} in memory cache`);
-    const vectorStore = chromaCollections[pdfId];
-    
-    // No need for filter since we're using the correct collection
-    console.log(`Performing similarity search with k=${k}...`);
-    const results = await vectorStore.similaritySearch(question, k);
-    
-    if (!results || results.length === 0) {
-      console.log("No results found in vector store");
-      return '';
+    // Second try: Use LangChain but avoid problematic where clause
+    try {
+      console.log(`Attempting to use LangChain wrapper with direct access...`);
+      const vectorStore = await Chroma.fromExistingCollection(
+        embeddings,
+        {
+          collectionName: pdfId,
+          url: 'http://localhost:8000',
+          filter: null, // Explicitly set filter to null
+          collectionMetadata: {
+            'hnsw:space': 'cosine'
+          }
+        }
+      );
+      
+      // Save to memory cache for future use
+      chromaCollections[pdfId] = vectorStore;
+      console.log(`Saved collection to memory cache for future use`);
+      
+      // Access the collection directly through LangChain
+      if (vectorStore.collection) {
+        console.log(`Accessing collection directly through LangChain...`);
+        const langchainDirectResponse = await vectorStore.collection.query({
+          queryEmbeddings: [embedding],
+          nResults: k
+        });
+        
+        if (langchainDirectResponse.documents[0] && langchainDirectResponse.documents[0].length > 0) {
+          console.log(`Found ${langchainDirectResponse.documents[0].length} results through LangChain direct access`);
+          return langchainDirectResponse.documents[0].join('\n\n');
+        }
+      }
+    } catch (langchainError) {
+      console.error(`Error with LangChain approach: ${langchainError.message}`);
     }
     
-    console.log(`Found ${results.length} results in vector store`);
-    return results.map(doc => doc.pageContent).join('\n\n');
+    console.log('No results found from any method');
+    return '';
   } catch (error) {
     console.error('Error retrieving from vector store:', error);
     return '';
@@ -95,10 +138,13 @@ async function getGraphContext(pdfId, question, limit = 5) {
   try {
     const session = neo4jDriver.session();
     
-    // Use a hardcoded LIMIT value directly in the query instead of a parameter
+    // Ensure limit is an integer - Neo4j doesn't accept floats for LIMIT
+    const limitInt = Math.floor(Number(limit));
+    
+    // Modified query to remove potential NULL content issues
     const result = await session.run(
       `MATCH (c:Chunk {graphId: $pdfId})
-       WHERE c.content IS NOT NULL
+       WHERE c.content IS NOT NULL AND trim(c.content) <> ''
        RETURN c.content AS content,
        null AS title,
        CASE 
@@ -106,8 +152,12 @@ async function getGraphContext(pdfId, question, limit = 5) {
          ELSE 1
        END AS relevance
        ORDER BY relevance DESC
-       LIMIT 5`,  // Hardcoded value instead of parameter
-      { pdfId, question }
+       LIMIT 1`,
+      { 
+        pdfId, 
+        question, 
+        limit: limitInt // Pass as integer 
+      }
     );
     
     await session.close();
@@ -137,12 +187,16 @@ function createPDFQuestionGraph(pdfId) {
     question: '',
     vectorContext: '',
     graphContext: '',
-    previousAnswer: ''
+    previousAnswer: '',
+    answer: '', // Add explicit answer field to initial state
+    finalAnswer: '' // Add finalAnswer field for clarity
   };
   
-  // Create the graph
+  // Create the graph with explicit output to ensure we get the full state
   const pdfQuestionGraph = new StateGraph({
-    channels: initialState
+    channels: initialState,
+    // Explicitly set which channel names should be included in the final output
+    include_all_state: true // This ensures all state properties are returned
   });
   
   // Add nodes
@@ -187,14 +241,32 @@ function createPDFQuestionGraph(pdfId) {
       .pipe(chatModel)
       .pipe(new StringOutputParser());
     
-    const answer = await chain.invoke({
-      vectorContext,
-      graphContext,
-      question,
-      previousAnswer
-    });
-    
-    return { ...state, answer };
+    try {
+      const answer = await chain.invoke({
+        vectorContext,
+        graphContext,
+        question,
+        previousAnswer
+      });
+      
+      console.log('Final answer generated successfully');
+      
+      // Explicitly update the state with answer property
+      return { 
+        ...state, 
+        answer: answer,  // Set both answer properties to ensure one is available
+        finalAnswer: answer
+      };
+    } catch (error) {
+      console.error('Error generating final answer:', error);
+      // If the final answer generation fails, use the previous answer as fallback
+      return { 
+        ...state, 
+        answer: previousAnswer,
+        finalAnswer: previousAnswer,
+        error: error.message
+      };
+    }
   });
   
   // Define the edges
@@ -221,12 +293,33 @@ async function answerQuestion(pdfId, question) {
     const pdfQuestionGraph = createPDFQuestionGraph(pdfId);
     const result = await pdfQuestionGraph.invoke({ question });
     
-    // Ensure we return a valid string (required by the Chat model)
-    if (!result.answer || typeof result.answer !== 'string' || result.answer.trim() === '') {
-      return "I couldn't find any relevant information in the PDF for your question. Please try rephrasing your question or ask about a different topic.";
+    console.log('LangGraph result keys:', Object.keys(result));
+    
+    // Check which property contains the answer (might be answer or output)
+    if (result.answer) {
+      // If answer property exists and is valid
+      if (typeof result.answer === 'string' && result.answer.trim() !== '') {
+        return result.answer;
+      }
+    } else if (result.previousAnswer) {
+      // If no answer but we have a previousAnswer (from initial generation)
+      console.log('Using previousAnswer as fallback');
+      return result.previousAnswer;
+    } else if (result.output) {
+      // Some versions of LangGraph may return output instead
+      console.log('Using output property instead of answer');
+      return result.output;
+    } else if (result.generateFinalAnswer) {
+      // The node name might be included in the result
+      console.log('Using generateFinalAnswer property');
+      return result.generateFinalAnswer;
     }
     
-    return result.answer;
+    // If we can't find the answer in any expected property, debug what we received
+    console.log('Debug full result object:', JSON.stringify(result, null, 2));
+    
+    // Fallback error message
+    return "I couldn't find any relevant information in the PDF for your question. Please try rephrasing your question or ask about a different topic.";
   } catch (error) {
     console.error('Error answering question:', error);
     return 'I encountered an error while trying to answer your question. Please try again later.';
